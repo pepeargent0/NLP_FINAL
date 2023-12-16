@@ -1,0 +1,6 @@
+requests
+beautifulsoup4
+llama_index
+sentence-transformers
+langchain
+python-decouple
