@@ -4,3 +4,5 @@ llama_index
 sentence-transformers
 langchain
 python-decouple
+pandas
+neo4j

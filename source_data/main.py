@@ -1,106 +1,45 @@
-from langchain.embeddings.huggingface import HuggingFaceEmbeddings
-from llama_index.embeddings import LangchainEmbedding
-from llama_index import ServiceContext
-from llama_index import VectorStoreIndex, SimpleDirectoryReader
-from jinja2 import Template
+from scrapper.scrapper import Scraper
 import requests
-from decouple import config
-def zephyr_instruct_template(messages, add_generation_prompt=True):
-    # Definir la plantilla Jinja
-    template_str = "{% for message in messages %}"
-    template_str += "{% if message['role'] == 'user' %}"
-    template_str += "<|user|>{{ message['content'] }}</s>\n"
-    template_str += "{% elif message['role'] == 'assistant' %}"
-    template_str += "<|assistant|>{{ message['content'] }}</s>\n"
-    template_str += "{% elif message['role'] == 'system' %}"
-    template_str += "<|system|>{{ message['content'] }}</s>\n"
-    template_str += "{% else %}"
-    template_str += "<|unknown|>{{ message['content'] }}</s>\n"
-    template_str += "{% endif %}"
-    template_str += "{% endfor %}"
-    template_str += "{% if add_generation_prompt %}"
-    template_str += "<|assistant|>\n"
-    template_str += "{% endif %}"
-    # Crear un objeto de plantilla con la cadena de plantilla
-    template = Template(template_str)
-    # Renderizar la plantilla con los mensajes proporcionados
-    return template.render(messages=messages, add_generation_prompt=add_generation_prompt)
+import pandas as pd
 
-def generate_answer(prompt: str, max_new_tokens: int = 768) -> None:
-    try:
-        # Tu clave API de Hugging Face
-        api_key = config('HUGGINGFACE_TOKEN')
-        # URL de la API de Hugging Face para la generación de texto
-        api_url = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
-        # Cabeceras para la solicitud
-        headers = {"Authorization": f"Bearer {api_key}"}
-        # Datos para enviar en la solicitud POST
-        # Sobre los parámetros: https://huggingface.co/docs/transformers/main_classes/text_generation
-        data = {
-        "inputs": prompt,
-        "parameters": {
-        "max_new_tokens": max_new_tokens,
-        "temperature": 0.7,
-        "top_k": 50,
-        "top_p": 0.95
-        }
-        }
-        # Realizamos la solicitud POST
-        response = requests.post(api_url, headers=headers, json=data)
-        # Extraer respuesta
-        respuesta = response.json()[0]["generated_text"][len(prompt):]
-        return respuesta
-    except Exception as e:
-        print(f"An error occurred: {e}")
 
-def prepare_prompt(query_str: str, nodes: list):
-    TEXT_QA_PROMPT_TMPL = (
-        "La información de contexto es la siguiente:\n"
-        "---------------------\n"
-        "{context_str}\n"
-        "---------------------\n"
-        "Dada la información de contexto anterior, y sin utilizar conocimiento previo, responde la siguiente pregunta.\n"
-        "Pregunta: {query_str}\n"
-        "Respuesta: "
-    )
+class DataPrep:
+    CONSTANTS = {
+        'CVE_URL': "https://cve.mitre.org/data/downloads/allitems.csv",
+        'CVE_FILE': "data/cve_data.csv",
+        'EXPLOIT_URL': "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv",
+        'EXPLOIT_FILE': "data/exploits.csv",
+        'SCRAPPED_DATA_FILE': 'data/segu-info.csv',
+        'SCRAPPED_DATA_URL': 'https://blog.segu-info.com.ar/sitemap.xml',
+        'DROP_END_ROWS': 7,
+        'DROP_STARTING_ROWS': 2
+    }
 
-    # Construimos el contexto de la pregunta
-    context_str = ''
-    for node in nodes:
-        page_label = node.metadata["page_label"]
-        file_path = node.metadata["file_path"]
-        context_str += f"\npage_label: {page_label}\n"
-        context_str += f"file_path: {file_path}\n\n"
-        context_str += f"{node.text}\n"
-    messages = [
-        {
-            "role": "system",
-            "content": "Eres un asistente útil que siempre responde con respuestas veraces, útiles y basadas en hechos.",
-        },
-        {"role": "user", "content": TEXT_QA_PROMPT_TMPL.format(context_str=context_str, query_str=query_str)},
-    ]
-    final_prompt = zephyr_instruct_template(messages)
-    return final_prompt
+    def __init__(self):
+        self.scraper = Scraper(url=self.CONSTANTS['SCRAPPED_DATA_URL'],
+                               output_file=self.CONSTANTS['SCRAPPED_DATA_FILE'])
 
-# Cargamos nuestro modelo de embeddings
-print('Cargando modelo de embeddings...')
-embed_model = LangchainEmbedding(
-    HuggingFaceEmbeddings(model_name='sentence-transformers/paraphrase-multilingual-mpnet-base-v2'))
-# Construimos un índice de documentos a partir de los datos de la carpeta llamaindex_data
-print('Indexando documentos...')
-# Create a service context with the custom embedding model
-documents = SimpleDirectoryReader("llamaindex_data").load_data()
-index = VectorStoreIndex.from_documents(documents, show_progress=True,
+    def download_and_process_data(self):
+        self.scraper.run()
+        self.download_file_from_url(self.CONSTANTS['CVE_URL'], self.CONSTANTS['CVE_FILE'])
+        self.load_and_process_csv(self.CONSTANTS['CVE_FILE'], skip_rows=self.CONSTANTS['DROP_STARTING_ROWS'])
+        self.download_file_from_url(self.CONSTANTS['EXPLOIT_URL'], self.CONSTANTS['EXPLOIT_FILE'])
 
-                                        service_context=ServiceContext.from_defaults(embed_model=embed_model,
-                                                                                     llm=None))
-retriever = index.as_retriever(similarity_top_k=2)
-print('Realizando llamada a HuggingFace para generar respuestas...\n')
-queries = ['¿Que es logofail?']
-for query_str in queries:
-    # Traemos los documentos más relevantes para la consulta
-    nodes = retriever.retrieve(query_str)
-    final_prompt = prepare_prompt(query_str, nodes)
-    print('Pregunta:', query_str)
-    print('Respuesta:')
-    print(generate_answer(final_prompt))
+    @staticmethod
+    def download_file_from_url(url, file_name):
+        response = requests.get(url)
+        if response.status_code == 200:
+            DataPrep.write_content_to_file(file_name, response.content)
+        else:
+            print(f"Could not download file. Status code: {response.status_code}")
+
+    @staticmethod
+    def write_content_to_file(file_name, content):
+        with open(file_name, 'wb') as file:
+            file.write(content)
+        print(f"File downloaded as {file_name}")
+
+    def load_and_process_csv(self, file_path, skip_rows):
+        df = pd.read_csv(file_path, skiprows=skip_rows, encoding='latin-1')
+        df = df.drop(index=range(0, self.CONSTANTS['DROP_END_ROWS']))
+        df.to_csv(file_path, index=False)

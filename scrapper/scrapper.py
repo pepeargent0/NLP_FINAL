@@ -29,25 +29,10 @@ def clean_text(text):
     return text
 
 
-def remove_p_with_a(paragraph):
-    return paragraph.find('a') is not None
-
-
-def remove_p_with_span(paragraph):
-    return paragraph.find('span') is not None
-
-
-def extract_elements(div_with_classes, tags, filter_function=None):
-    for tag in tags:
-        elements = div_with_classes.find_all(tag)
-        if filter_function:
-            elements = [element for element in elements if not filter_function(element)]
-        for element in elements:
-            element.decompose()
-
 def has_unwanted_elements(element):
     unwanted_tags = ['noscript', 'img', 'script', 'div', 'section', 'span']
     return element.name in unwanted_tags
+
 
 def clean_p(div_with_classes):
     if any(div_with_classes.find_all(has_unwanted_elements)):
@@ -139,17 +124,17 @@ def get_random_user_agent():
 
 
 class Scraper:
-    def __init__(self, output_file, security_url, request_delay=1):
+    def __init__(self, output_file, url, request_delay=1):
         """
         constructor de la clase Scraper con las URLs de los sitios a trabajar.
 
         Args:
             request_delay: tiempo entre peticion
             output_file (str): Nombre del archivo CSV de salida.
-            security_url (str): URL de noticias de seguridad .xml.
+            url (str): URL de noticias de seguridad .xml.
 
         """
-        self.security_url = security_url
+        self.security_url = url
         self.output_file = output_file
         self.request_delay = request_delay
 

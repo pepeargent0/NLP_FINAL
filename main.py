@@ -1,3 +1,4 @@
+"""
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from decouple import config
 from llama_index import ServiceContext, VectorStoreIndex, download_loader, SimpleDirectoryReader
@@ -113,7 +114,7 @@ embed_model = HuggingFaceEmbeddings(model_name='sentence-transformers/paraphrase
 # Construimos un índice de documentos a partir del archivo CSV con delimitador "|"
 print('Indexando documentos...')
 
-df = pd.read_csv("data/segurinfo.csv", encoding="utf-8", delimiter='|', nrows=800)
+df = pd.read_csv("data/segu-info.csv", encoding="utf-8", delimiter='|', nrows=800)
 
 # Obtener los valores de las columnas "title" y "text"
 titles = df["title"].tolist()
@@ -140,3 +141,10 @@ for query_str in queries:
     print('Pregunta:', query_str)
     print('Respuesta:')
     print(generate_answer(final_prompt))
+
+"""
+
+from source_data.main import DataPrep
+if __name__ == '__main__':
+    # get_data = DataPrep().download_and_process_data()   #esta funcion se encarga de conseguir los datos atravez de scrapper
+    pass
