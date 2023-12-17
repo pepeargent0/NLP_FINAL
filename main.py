@@ -143,8 +143,29 @@ for query_str in queries:
     print(generate_answer(final_prompt))
 
 """
-
+import pandas as pd
+from data_base.data_base import Neo4jDataLoader
 from source_data.main import DataPrep
+
 if __name__ == '__main__':
     # get_data = DataPrep().download_and_process_data()   #esta funcion se encarga de conseguir los datos atravez de scrapper
-    pass
+
+
+    # Rutas a tus archivos CSV
+    csv_cve_path = 'data/cve_data.csv'
+    csv_exploit_path = 'data/exploit_db.csv'
+    csv_news_path = 'data/segu-info.csv'
+
+    df_cve = pd.read_csv(csv_cve_path, encoding='latin-1')
+    print(df_cve.columns)
+    df_exploit = pd.read_csv(csv_exploit_path)
+    df_news = pd.read_csv(csv_news_path, delimiter='|')
+
+    neo4j_loader = Neo4jDataLoader(uri, user, password)
+
+    # Crear nodos y relaciones en una transacción
+    neo4j_loader.create_nodes(df_cve, df_exploit, df_news)
+    neo4j_loader.create_relationships()
+
+    # Cierra la conexión al finalizar
+    neo4j_loader.close()
