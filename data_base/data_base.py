@@ -1,84 +1,64 @@
 from neo4j import GraphDatabase
 
-class Neo4jDataLoader:
-    def __init__(self, uri, user, password):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+class ExploitDatabase:
+    def __init__(self, uri, username, password):
+        self.driver = GraphDatabase.driver(uri, auth=(username, password))
 
     def close(self):
         self.driver.close()
 
-    def create_nodes(self, df_cve, df_exploit, df_news):
+    def load_data(self, row):
         with self.driver.session() as session:
-            # Crear nodos CVE
-            cve_query = """
-            UNWIND cve_data as row
-            MERGE (c:CVE {name: row.Name})
-            SET c.status = row.Status,
-                c.description = row.Description,
-                c.references = row.References,
-                c.phase = row.Phase,
-                c.votes = row.Votes,
-                c.comments = row.Comments
-            """
-            cve_data = df_cve.to_dict(orient='records')
-            session.run(cve_query, cve_data=cve_data)
+            exploit_node = session.write_transaction(self._create_exploit_node, row)
+            exploit_node_id = exploit_node.id
+            self._create_platform_node(session, exploit_node_id, row)
+            self._create_port_node(session, exploit_node_id, row)
+            self._create_tag_nodes(session, exploit_node_id, row)
 
-            # Crear nodos Exploits
-            exploit_query = """
-            UNWIND exploit_data as row
-            MERGE (e:Exploit {codes: row.codes})
-            SET e.file = row.file,
-                e.description = row.description,
-                e.date_published = row.date_published,
-                e.author = row.author,
-                e.type = row.type,
-                e.platform = row.platform,
-                e.port = row.port,
-                e.date_added = row.date_added,
-                e.date_updated = row.date_updated,
-                e.verified = row.verified,
-                e.codes = row.codes,
-                e.tags = row.tags,
-                e.aliases = row.aliases,
-                e.screenshot_url = row.screenshot_url,
-                e.application_url = row.application_url,
-                e.source_url = row.source_url
-            """
-            exploit_data = df_exploit.to_dict(orient='records')
-            session.run(exploit_query, exploit_data=exploit_data)
-
-            # Crear nodos Noticias
-            news_query = """
-            UNWIND news_data as row
-            MERGE (n:News {title: row.title})
-            SET n.url = row.url,
-                n.text = row.text
-            """
-            news_data = df_news.to_dict(orient='records')
-            session.run(news_query, news_data=news_data)
-
-    def create_relationships(self):
+    def backup(self, path):
         with self.driver.session() as session:
-            cve_exploit_relation_query = """
-                    MATCH (c:CVE), (e:Exploit)
-                    WHERE c.name = e.codes
-                    CREATE (c)-[:HAS_EXPLOIT]->(e)
-                    """
-            session.run(cve_exploit_relation_query)
+            result = session.run("CALL db.backup($path)", path=path)
+            for record in result:
+                print(record)
 
-            # Relaciones entre Exploits y News basadas en la presencia de códigos en el texto
-            exploit_news_relation_query = """
-                    MATCH (e:Exploit), (n:News)
-                    WHERE n.text CONTAINS e.codes
-                    CREATE (e)-[:MENTIONED_IN]->(n)
-                    """
-            session.run(exploit_news_relation_query)
+    @staticmethod
+    def _create_exploit_node(tx, row):
+        return tx.run("""
+            MERGE (e:Exploit {id: $id})
+            ON CREATE SET e.file = $file, e.description = $description, e.date_published = $date_published,
+            e.author = $author, e.type = $type, e.date_added = $date_added, e.date_updated = $date_updated,
+            e.verified = $verified, e.codes = $codes, e.tags = $tags, e.aliases = $aliases, 
+            e.screenshot_url = $screenshot_url, e.application_url = $application_url, e.source_url = $source_url
+            RETURN e
+        """, **row).single()[0]
 
-            cve_news_relation_query = """
-                    MATCH (c:CVE), (n:News)
-                    WHERE n.text CONTAINS c.name
-                    CREATE (c)-[:MENTIONED_IN]->(n)
-                    """
-            session.run(cve_news_relation_query)
+    @staticmethod
+    def _create_platform_node(session, exploit_node_id, row):
+        session.run("""
+            MERGE (p:Platform {name: $platform})
+            WITH p
+            MATCH (e:Exploit) WHERE ID(e) = $exploit_node_id
+            MERGE (e)-[:Afecta_a]->(p)
+        """, exploit_node_id=exploit_node_id, **row)
+
+    @staticmethod
+    def _create_port_node(session, exploit_node_id, row):
+        session.run("""
+            MERGE (pt:Port {number: $port})
+            WITH pt
+            MATCH (e:Exploit) WHERE ID(e) = $exploit_node_id
+            MERGE (e)-[:Usa_puerto]->(pt)
+        """, exploit_node_id=exploit_node_id, **row)
+
+    @staticmethod
+    def _create_tag_nodes(session, exploit_node_id, row):
+        for tag in row["tags"].split(","):
+            session.run("""
+                MERGE (t:Tag {name: $tag})
+                WITH t
+                MATCH (e:Exploit) WHERE ID(e) = $exploit_node_id
+                MERGE (e)-[:Tiene_etiqueta]->(t)
+            """, exploit_node_id=exploit_node_id, tag=tag)
+
 
 
