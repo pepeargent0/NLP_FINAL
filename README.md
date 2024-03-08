@@ -8,4 +8,5 @@ En el siguiente repositorio se encuentra un archivo de Google Colab que permite 
 
 ### NLP_FINAL_FINAL.ipynb. colab
 ### Estadodelarte.pdf ejericio 2
+### conclusion.pdf informe del punto 1
 ### Nota el link de colab fue cambiado, por bloqueos de ip. 
